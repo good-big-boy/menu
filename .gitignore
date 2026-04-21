@@ -1,0 +1,4 @@
+node_modules/
+uploads/
+server.log
+.DS_Store
