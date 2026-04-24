@@ -32,6 +32,23 @@ const parseArrayInput = (input) => {
   return [];
 };
 
+const toStepPayload = (step) => {
+  if (!step) return { title: '', description: '' };
+  if (typeof step === 'string') {
+    return { title: '', description: step };
+  }
+  return {
+    title: step.title || '',
+    description: step.description || ''
+  };
+};
+
+const toSeasoningName = (item) => {
+  if (!item) return '';
+  if (typeof item === 'string') return item.trim();
+  return (item.name || '').trim();
+};
+
 const buildRecipeDetail = async (db, recipe) => {
   const ingResults = await db.exec(
     'SELECT ri.ingredient_name as name, ri.quantity, i.icon FROM recipe_ingredients ri LEFT JOIN ingredients i ON ri.ingredient_name = i.name WHERE ri.recipe_id = ? ORDER BY ri.id',
@@ -42,7 +59,7 @@ const buildRecipeDetail = async (db, recipe) => {
     : [];
 
   const stepResults = await db.exec(
-    'SELECT step_number, description, image_path FROM recipe_steps WHERE recipe_id = ? ORDER BY step_number',
+    'SELECT step_number, title, description, image_path FROM recipe_steps WHERE recipe_id = ? ORDER BY step_number',
     [recipe.id]
   );
   const steps = stepResults.length > 0
@@ -50,10 +67,19 @@ const buildRecipeDetail = async (db, recipe) => {
       const obj = rowToObject(stepResults[0].columns, row);
       return {
         stepNumber: obj.step_number,
+        title: obj.title || '',
         description: obj.description,
         image: toPublicAssetUrl(obj.image_path)
       };
     })
+    : [];
+
+  const seasoningResults = await db.exec(
+    'SELECT name FROM recipe_seasonings WHERE recipe_id = ? ORDER BY id',
+    [recipe.id]
+  );
+  const seasonings = seasoningResults.length > 0
+    ? seasoningResults[0].values.map((row) => rowToObject(seasoningResults[0].columns, row))
     : [];
 
   return {
@@ -67,6 +93,7 @@ const buildRecipeDetail = async (db, recipe) => {
     image: toPublicAssetUrl(recipe.image_path),
     video: toPublicAssetUrl(recipe.video_path),
     ingredients,
+    seasonings,
     steps,
     createdAt: recipe.created_at,
     updatedAt: recipe.updated_at
@@ -138,7 +165,7 @@ router.get('/:id', async (req, res) => {
 
 router.post('/', upload.any(), async (req, res) => {
   try {
-    const { name, category, flavor, servings, cookingMethod, description, ingredients, steps } = req.body;
+    const { name, category, flavor, servings, cookingMethod, description, ingredients, seasonings, steps } = req.body;
     if (!name || !category || !flavor) {
       return res.status(400).json({ success: false, message: '名称、分类和口味不能为空' });
     }
@@ -164,14 +191,24 @@ router.post('/', upload.any(), async (req, res) => {
       );
     }
 
+    const seasoningsData = parseArrayInput(seasonings);
+    for (const item of seasoningsData) {
+      const seasoningName = toSeasoningName(item);
+      if (!seasoningName) continue;
+      await db.run(
+        'INSERT INTO recipe_seasonings (recipe_id, name) VALUES (?, ?)',
+        [recipeId, seasoningName]
+      );
+    }
+
     const stepsData = parseArrayInput(steps);
     for (let index = 0; index < stepsData.length; index += 1) {
-      const step = stepsData[index];
+      const step = toStepPayload(stepsData[index]);
       const stepFile = req.files?.find((f) => f.fieldname === `step_${index}`);
       const stepImagePath = stepFile ? await uploadFile(stepFile, `recipes/${safeRecipeName}`) : null;
       await db.run(
-        'INSERT INTO recipe_steps (recipe_id, step_number, description, image_path) VALUES (?, ?, ?, ?)',
-        [recipeId, index + 1, step.description || step || '', stepImagePath]
+        'INSERT INTO recipe_steps (recipe_id, step_number, title, description, image_path) VALUES (?, ?, ?, ?, ?)',
+        [recipeId, index + 1, step.title, step.description, stepImagePath]
       );
     }
 
@@ -186,7 +223,7 @@ router.put('/:id', upload.any(), async (req, res) => {
   try {
     const db = getDb();
     const { id } = req.params;
-    const { name, category, flavor, servings, cookingMethod, description, ingredients, steps } = req.body;
+    const { name, category, flavor, servings, cookingMethod, description, ingredients, seasonings, steps } = req.body;
 
     const results = await db.exec('SELECT * FROM recipes WHERE id = ?', [id]);
     if (results.length === 0 || results[0].values.length === 0) {
@@ -225,21 +262,32 @@ router.put('/:id', upload.any(), async (req, res) => {
       );
     }
 
+    await db.run('DELETE FROM recipe_seasonings WHERE recipe_id = ?', [id]);
+    const seasoningsData = parseArrayInput(seasonings);
+    for (const item of seasoningsData) {
+      const seasoningName = toSeasoningName(item);
+      if (!seasoningName) continue;
+      await db.run(
+        'INSERT INTO recipe_seasonings (recipe_id, name) VALUES (?, ?)',
+        [id, seasoningName]
+      );
+    }
+
     const existingStepsResult = await db.exec('SELECT image_path FROM recipe_steps WHERE recipe_id = ? ORDER BY step_number ASC', [id]);
     const existingStepImages = existingStepsResult.length > 0 ? existingStepsResult[0].values.map((row) => row[0]) : [];
 
     await db.run('DELETE FROM recipe_steps WHERE recipe_id = ?', [id]);
     const stepsData = parseArrayInput(steps);
     for (let index = 0; index < stepsData.length; index += 1) {
-      const step = stepsData[index];
+      const step = toStepPayload(stepsData[index]);
       const stepFile = req.files?.find((f) => f.fieldname === `step_${index}`);
       const stepImagePath = stepFile
         ? await uploadFile(stepFile, `recipes/${safeRecipeName}`)
         : (existingStepImages[index] || null);
 
       await db.run(
-        'INSERT INTO recipe_steps (recipe_id, step_number, description, image_path) VALUES (?, ?, ?, ?)',
-        [id, index + 1, step.description || step || '', stepImagePath]
+        'INSERT INTO recipe_steps (recipe_id, step_number, title, description, image_path) VALUES (?, ?, ?, ?, ?)',
+        [id, index + 1, step.title, step.description, stepImagePath]
       );
     }
 

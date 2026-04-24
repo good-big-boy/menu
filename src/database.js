@@ -166,9 +166,20 @@ const initSchema = async () => {
       recipe_id BIGINT NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
       step_number INTEGER NOT NULL,
       description TEXT NOT NULL,
+      title TEXT,
       image_path TEXT
     )
   `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS recipe_seasonings (
+      id BIGSERIAL PRIMARY KEY,
+      recipe_id BIGINT NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+      name TEXT NOT NULL
+    )
+  `);
+
+  await query('ALTER TABLE recipe_steps ADD COLUMN IF NOT EXISTS title TEXT');
 
   await query(`
     CREATE TABLE IF NOT EXISTS users (
