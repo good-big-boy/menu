@@ -5,6 +5,7 @@ const { UPLOAD_BASE_DIR } = require('../middleware/upload');
 
 const LOCAL_UPLOAD_BASE_DIR = UPLOAD_BASE_DIR || process.env.UPLOAD_BASE_DIR || path.join(__dirname, '..', '..', 'uploads');
 const R2_PUBLIC_BASE_URL = process.env.R2_PUBLIC_BASE_URL || '';
+const STORAGE_PROVIDER = (process.env.STORAGE_PROVIDER || 'local').toLowerCase();
 
 let r2Client = null;
 
@@ -80,8 +81,7 @@ const uploadWithR2 = async (file, folder) => {
 };
 
 const uploadFile = async (file, folder) => {
-  const provider = (process.env.STORAGE_PROVIDER || '').toLowerCase();
-  if (provider === 'r2') {
+  if (STORAGE_PROVIDER === 'r2') {
     return uploadWithR2(file, folder);
   }
   return uploadWithLocalFs(file, folder);
@@ -93,6 +93,9 @@ const toPublicAssetUrl = (storedValue) => {
   }
   if (isAbsoluteUrl(storedValue)) {
     return storedValue;
+  }
+  if (STORAGE_PROVIDER === 'r2' && !R2_PUBLIC_BASE_URL) {
+    throw new Error('R2_PUBLIC_BASE_URL is required when STORAGE_PROVIDER=r2. Set it to your public bucket URL (for example: https://pub-xxx.r2.dev).');
   }
   if (R2_PUBLIC_BASE_URL) {
     return `${R2_PUBLIC_BASE_URL.replace(/\/+$/, '')}/${storedValue.replace(/^\/+/, '')}`;
