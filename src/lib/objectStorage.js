@@ -1,8 +1,9 @@
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const fs = require('fs');
 const path = require('path');
+const { UPLOAD_BASE_DIR } = require('../middleware/upload');
 
-const LOCAL_UPLOAD_BASE_DIR = process.env.UPLOAD_BASE_DIR || path.join(__dirname, '..', '..', 'uploads');
+const LOCAL_UPLOAD_BASE_DIR = UPLOAD_BASE_DIR || process.env.UPLOAD_BASE_DIR || path.join(__dirname, '..', '..', 'uploads');
 const R2_PUBLIC_BASE_URL = process.env.R2_PUBLIC_BASE_URL || '';
 
 let r2Client = null;
